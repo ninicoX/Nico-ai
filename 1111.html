@@ -1,0 +1,704 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+    <title>NiniChat AI - 微信风格聊天</title>
+    <style>
+        /* GPT 风格 CSS 变量与主题 */
+        :root {
+            --primary-blue: #007aff; /* iOS/GPT 强调蓝 */
+            --bg-light: #f7f7f7;     /* 浅背景 */
+            --bg-dark: #e8e8e8;      /* 侧栏/输入框背景 */
+            --chat-bg: #ffffff;      /* 聊天窗口背景 */
+            --ai-bubble: #e0f7fa;    /* AI 气泡 (浅青色) */
+            --user-bubble: #dcf8c6;  /* 用户气泡 (微信绿) */
+            --text-dark: #333333;
+            --text-light: #666666;
+            --border-color: #dddddd;
+        }
+
+        /* 重置与基础设置 */
+        * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+        body, html {
+            margin: 0; padding: 0; height: 100dvh; width: 100%;
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif, "Apple Color Emoji", "Segoe UI Emoji", "Segoe UI Symbol";
+            background: var(--bg-light);
+            overflow: hidden;
+        }
+
+        /* 主容器 */
+        .app-container {
+            display: flex;
+            height: 100dvh;
+            max-width: 1400px;
+            margin: 0 auto;
+            position: relative;
+            background: var(--chat-bg);
+            box-shadow: 0 4px 20px rgba(0, 0, 0, 0.05);
+            transition: all 0.3s ease;
+        }
+
+        /* 响应式：横屏/桌面优化 */
+        @media (orientation: landscape) and (min-width: 600px) {
+            .app-container {
+                height: 94dvh;
+                margin: 3dvh auto;
+                border-radius: 12px;
+                overflow: hidden;
+                border: 1px solid var(--border-color);
+            }
+        }
+
+        /* 侧边栏：联系人列表 (微信列表风格) */
+        #contact-list {
+            width: 300px;
+            min-width: 280px;
+            height: 100%;
+            border-right: 1px solid var(--border-color);
+            background: var(--bg-dark);
+            display: flex;
+            flex-direction: column;
+        }
+        
+        #contacts-container-wrapper { flex-grow: 1; overflow-y: auto; }
+        
+        /* 移动端竖屏隐藏列表 */
+        @media (max-width: 600px) and (orientation: portrait) {
+            #contact-list { display: none; }
+            .app-container { max-width: 100%; }
+        }
+
+        /* 联系人项样式 */
+        .contact-item {
+            padding: 15px 20px;
+            display: flex;
+            align-items: center;
+            cursor: pointer;
+            border-bottom: 1px solid rgba(0, 0, 0, 0.05);
+            transition: background 0.2s;
+        }
+        .contact-item:hover { background: rgba(0, 0, 0, 0.03); }
+        .contact-item.active { background: var(--chat-bg); font-weight: 600; }
+        .contact-avatar { width: 45px; height: 45px; border-radius: 5px; margin-right: 15px; }
+
+        /* 聊天窗口区域 */
+        #chat-area { flex: 1; display: flex; flex-direction: column; background: var(--chat-bg); }
+
+        /* 聊天头部 */
+        header {
+            padding: 15px 25px;
+            text-align: center;
+            font-weight: 600;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            border-bottom: 1px solid var(--border-color);
+            background: var(--chat-bg);
+            color: var(--text-dark);
+        }
+
+        .icon-btn { background: none; border: none; font-size: 20px; cursor: pointer; color: var(--text-dark); padding: 5px; }
+        .icon-btn:hover { color: var(--primary-blue); }
+
+        /* 聊天内容窗口 */
+        #chat-window {
+            flex: 1;
+            overflow-y: auto;
+            padding: 20px 20px 10px;
+            min-height: 0;
+            display: flex;
+            flex-direction: column;
+            gap: 15px;
+            background: var(--bg-light); /* 聊天背景色 */
+        }
+
+        /* 消息气泡 */
+        .message {
+            display: flex;
+            align-items: flex-start;
+            max-width: 80%;
+            opacity: 0;
+            animation: fadeIn 0.3s ease-out forwards;
+        }
+        
+        .message.user { margin-left: auto; flex-direction: row-reverse; }
+
+        .msg-avatar { width: 35px; height: 35px; border-radius: 4px; margin: 0 8px; }
+
+        .content {
+            padding: 10px 14px;
+            border-radius: 12px;
+            font-size: 15px;
+            line-height: 1.5;
+            color: var(--text-dark);
+            box-shadow: 0 1px 1px rgba(0,0,0,0.08);
+            word-break: break-word;
+            white-space: pre-wrap; /* 保持打字机效果的空格和换行 */
+        }
+
+        .ai .content { background: var(--ai-bubble); border-bottom-left-radius: 4px; }
+        .user .content { background: var(--user-bubble); border-bottom-right-radius: 4px; }
+
+        /* 打字效果光标 (GPT 风格) */
+        .typing-cursor {
+            display: inline-block;
+            width: 8px;
+            height: 16px;
+            background-color: var(--primary-blue);
+            margin-left: 2px;
+            animation: blink 1s step-start infinite;
+            vertical-align: middle;
+        }
+        @keyframes blink { 0%, 100% { opacity: 1; } 50% { opacity: 0; } }
+
+        /* 输入区域 */
+        .input-area {
+            padding: 10px 15px;
+            background: var(--chat-bg);
+            border-top: 1px solid var(--border-color);
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+
+        #user-input {
+            flex: 1;
+            min-height: 40px;
+            max-height: 150px;
+            border: 1px solid var(--border-color);
+            border-radius: 8px;
+            padding: 10px 12px;
+            background: var(--bg-light);
+            outline: none;
+            font-size: 16px;
+            resize: none;
+            transition: border-color 0.2s;
+        }
+
+        #user-input:focus { border-color: var(--primary-blue); background: white; }
+
+        .send-btn {
+            width: 40px;
+            height: 40px;
+            background: var(--primary-blue);
+            border: none;
+            border-radius: 8px;
+            color: white;
+            cursor: pointer;
+            font-size: 18px;
+            line-height: 40px;
+            transition: background 0.2s, transform 0.1s;
+        }
+        .send-btn:active { transform: scale(0.95); }
+        .send-btn:disabled { background: var(--text-light); cursor: default; }
+
+        /* 设置模态框 - GPT/极简风格 */
+        .settings-overlay {
+            position: absolute;
+            top: 0; left: 0; width: 100%; height: 100%;
+            background: rgba(0, 0, 0, 0.4);
+            backdrop-filter: blur(5px);
+            z-index: 1000;
+            display: none;
+            align-items: center;
+            justify-content: center;
+            padding: 20px;
+        }
+
+        .settings-panel {
+            background: white;
+            padding: 30px;
+            border-radius: 12px;
+            width: 90%;
+            max-width: 450px;
+            box-shadow: 0 10px 30px rgba(0, 0, 0, 0.2);
+            transform: scale(0.95);
+            opacity: 0;
+            animation: modalIn 0.3s forwards;
+        }
+        @keyframes modalIn { to { transform: scale(1); opacity: 1; } }
+
+        .settings-panel label { font-weight: 600; display: block; margin-top: 15px; color: var(--text-dark); }
+        .settings-panel input { width: 100%; margin-top: 5px; margin-bottom: 20px; border: 1px solid var(--border-color); padding: 10px; border-radius: 6px; }
+
+        .btn-group button {
+            padding: 10px 15px; border-radius: 6px; font-weight: 600; transition: background 0.2s;
+            margin-left: 10px;
+        }
+        .primary-btn { background: var(--primary-blue); color: white; border: none; }
+        .primary-btn:hover { background: #0069d9; }
+        .secondary-btn { background: var(--bg-dark); color: var(--text-dark); border: 1px solid var(--border-color); }
+        .secondary-btn:hover { background: #dcdcdc; }
+        .delete-btn { background: #ff4d4f; color: white; border: none; }
+        .delete-btn:hover { background: #e60000; }
+    </style>
+</head>
+<body>
+
+<div class="app-container">
+    <div id="contact-list">
+        <header style="justify-content: center; background: var(--bg-dark); border-bottom: 1px solid var(--border-color); padding: 20px 0;">
+            <span style="font-size: 1.1rem; color: var(--text-dark);">NiniChat AI 🗨️</span>
+        </header>
+        <div id="contacts-container-wrapper">
+            <div id="contacts-container">
+                </div>
+        </div>
+        <div style="padding: 15px 15px 10px;">
+            <button class="primary-btn" style="width: 100%; font-size: 15px;" onclick="addContact()">+ 添加新 AI</button>
+        </div>
+    </div>
+
+    <div id="chat-area">
+        <header>
+            <button class="icon-btn" onclick="showContactList()" id="back-to-list-btn" style="display:none;">&lt;</button>
+            <span id="chat-title" style="flex-grow: 1;">请选择一个联系人</span>
+            <div>
+                <button class="icon-btn" onclick="showSettings()"><span style="font-size: 18px;">⚙️</span></button>
+                <button class="icon-btn" onclick="clearChat()"><span style="font-size: 18px;">🗑️</span></button>
+            </div>
+        </header>
+
+        <div id="chat-window">
+            <div class="message ai" style="opacity: 1;">
+                <img class="msg-avatar" src="https://api.dicebear.com/7.x/bottts/svg?seed=NiniChat">
+                <div class="content">欢迎使用 NiniChat AI！请先添加您的 AI 伙伴，并配置 API Key 和模型名开始聊天。</div>
+            </div>
+        </div>
+
+        <div class="input-area">
+            <textarea id="user-input" placeholder="输入消息 (Shift+Enter 换行)..." onkeydown="handleInputKeyDown(event)"></textarea>
+            <button class="send-btn" id="send-btn" onclick="sendMessage()" disabled>
+                <span style="display: inline-block; transform: rotate(45deg); margin-left: -2px; margin-top: -3px;">➤</span>
+            </button>
+        </div>
+    </div>
+
+    <div class="settings-overlay" id="settings-overlay">
+        <div class="settings-panel">
+            <h2 id="settings-title" style="margin-top: 0; color: var(--primary-blue);">AI 配置</h2>
+            <input type="hidden" id="setting-contact-id">
+            
+            <label>AI 昵称</label>
+            <input type="text" id="setting-name">
+
+            <label>SiliconFlow API Key</label>
+            <input type="password" id="setting-api-key" placeholder="在此粘贴 sk-...">
+
+            <label>模型名称</label>
+            <input type="text" id="setting-model" placeholder="deepseek-ai/DeepSeek-V3">
+
+            <label>AI 提示词 (System Prompt)</label>
+            <input type="text" id="setting-system-prompt" placeholder="你是一个有用的助手...">
+
+            <div class="btn-group" style="justify-content: flex-end;">
+                <button class="delete-btn" onclick="deleteContact()" style="margin-right: auto;">🗑️ 删除 AI</button>
+                <button class="secondary-btn" onclick="toggleSettings()">取消</button>
+                <button class="primary-btn" onclick="saveContactSettings()">💾 保存</button>
+            </div>
+        </div>
+    </div>
+
+</div>
+<script>
+    // ** 第二部分：JavaScript 核心逻辑将从此处开始 **
+    // 请继续粘贴下一段代码...
+const API_URL = 'https://api.siliconflow.cn/v1/chat/completions';
+    let contacts = [];
+    let currentContactId = null;
+    let isTyping = false; // 控制是否正在打字
+    let isMobileView = false;
+
+    // 表情包 URL 数组 (用于随机头像)
+    const AI_AVATARS = [
+        'https://api.dicebear.com/7.x/adventurer/svg?seed=Fluffy',
+        'https://api.dicebear.com/7.x/avataaars/svg?seed=Mia',
+        'https://api.dicebear.com/7.x/bottts/svg?seed=Bot',
+        'https://api.dicebear.com/7.x/croodles/svg?seed=Zoe',
+        'https://api.dicebear.com/7.x/icons/svg?seed=Face',
+        'https://api.dicebear.com/7.x/shapes/svg?seed=Shape'
+    ];
+    
+    // --- 初始设置与数据加载 ---
+
+    window.onload = () => {
+        loadContacts();
+        renderContactList();
+        if (contacts.length > 0) {
+            switchContact(contacts[0].id);
+        } else {
+             // 如果是空列表，禁用发送按钮
+             document.getElementById('send-btn').disabled = true;
+        }
+
+        // 绑定输入框事件
+        document.getElementById('user-input').addEventListener('input', checkSendButton);
+        
+        // 监听屏幕大小变化，用于处理移动端布局
+        window.addEventListener('resize', handleOrientationChange);
+        handleOrientationChange();
+    };
+
+    function checkSendButton() {
+        const input = document.getElementById('user-input');
+        document.getElementById('send-btn').disabled = input.value.trim() === '' || isTyping || !currentContactId;
+    }
+    
+    function handleInputKeyDown(event) {
+        // Shift + Enter 换行
+        if (event.key === 'Enter' && event.shiftKey) {
+            return;
+        }
+        // Enter 发送
+        if (event.key === 'Enter') {
+            event.preventDefault();
+            sendMessage();
+        }
+    }
+
+    function getRandomAvatar() {
+        const index = Math.floor(Math.random() * AI_AVATARS.length);
+        return AI_AVATARS[index];
+    }
+
+    function loadContacts() {
+        const stored = localStorage.getItem('ai_chat_contacts_v2');
+        if (stored) {
+            contacts = JSON.parse(stored);
+        } else {
+            // 默认联系人
+            contacts = [
+                {
+                    id: Date.now(),
+                    name: 'NiniChat 默认助手',
+                    model: 'deepseek-ai/DeepSeek-V3',
+                    apiKey: '',
+                    systemPrompt: '你是一个友好、简洁且专业的 AI 助手，回答需使用中文。',
+                    history: [],
+                    avatar: getRandomAvatar()
+                }
+            ];
+            saveContacts();
+        }
+    }
+
+    function saveContacts() {
+        localStorage.setItem('ai_chat_contacts_v2', JSON.stringify(contacts));
+    }
+
+    // --- 联系人管理功能 ---
+
+    function findContact(id) {
+        return contacts.find(c => c.id === id);
+    }
+
+    function renderContactList() {
+        const container = document.getElementById('contacts-container');
+        container.innerHTML = '';
+        contacts.forEach(contact => {
+            const div = document.createElement('div');
+            div.className = `contact-item ${contact.id === currentContactId ? 'active' : ''}`;
+            div.setAttribute('data-id', contact.id);
+            div.onclick = () => switchContact(contact.id);
+            
+            const avatarUrl = contact.avatar || getRandomAvatar();
+
+            div.innerHTML = `
+                <img class="contact-avatar" src="${avatarUrl}" alt="${contact.name}">
+                <div style="flex-grow: 1;">${contact.name}</div>
+                <button class="icon-btn" style="font-size: 14px;" onclick="event.stopPropagation(); showSettings(${contact.id})">⚙️</button>
+            `;
+            container.appendChild(div);
+        });
+        checkSendButton();
+    }
+
+    function addContact() {
+        const newContact = {
+            id: Date.now(),
+            name: `新 AI ${contacts.length + 1}`,
+            model: 'deepseek-ai/DeepSeek-V3',
+            apiKey: '',
+            systemPrompt: '你是一个有用的助手。',
+            history: [],
+            avatar: getRandomAvatar()
+        };
+        contacts.push(newContact);
+        saveContacts();
+        renderContactList();
+        switchContact(newContact.id);
+        showSettings(newContact.id);
+    }
+
+    function deleteContact() {
+        if (contacts.length <= 1) {
+            alert("必须保留至少一个 AI 联系人！");
+            return;
+        }
+        
+        const idToDelete = parseInt(document.getElementById('setting-contact-id').value);
+        const contact = findContact(idToDelete);
+
+        if (!confirm(`确定要删除 AI 联系人 "${contact.name}" 吗？此操作不可撤销。`)) {
+            return;
+        }
+
+        const index = contacts.findIndex(c => c.id === idToDelete);
+        if (index > -1) {
+            contacts.splice(index, 1);
+            saveContacts();
+            renderContactList();
+            toggleSettings(); 
+
+            if (currentContactId === idToDelete) {
+                const newContact = contacts[0];
+                switchContact(newContact.id);
+            }
+        }
+    }
+
+    function switchContact(id) {
+        currentContactId = id;
+        const contact = findContact(id);
+        document.getElementById('chat-title').innerText = contact.name;
+        renderChatWindow(contact.history);
+        renderContactList();
+        
+        handleOrientationChange(); 
+    }
+
+    // --- 设置面板功能 ---
+
+    function toggleSettings() {
+        const overlay = document.getElementById('settings-overlay');
+        overlay.style.display = overlay.style.display === 'flex' ? 'none' : 'flex';
+    }
+
+    function showSettings(id = currentContactId) {
+        const contact = findContact(id);
+        if (!contact) return;
+
+        document.getElementById('settings-title').innerText = `配置: ${contact.name}`;
+        document.getElementById('setting-contact-id').value = contact.id;
+        document.getElementById('setting-name').value = contact.name;
+        document.getElementById('setting-api-key').value = contact.apiKey;
+        document.getElementById('setting-model').value = contact.model;
+        document.getElementById('setting-system-prompt').value = contact.systemPrompt;
+        
+        toggleSettings();
+    }
+
+    function saveContactSettings() {
+        const id = parseInt(document.getElementById('setting-contact-id').value);
+        const contact = findContact(id);
+
+        if (contact) {
+            contact.name = document.getElementById('setting-name').value;
+            contact.apiKey = document.getElementById('setting-api-key').value;
+            contact.model = document.getElementById('setting-model').value;
+            contact.systemPrompt = document.getElementById('setting-system-prompt').value;
+            saveContacts();
+            renderContactList();
+            if (id === currentContactId) {
+                document.getElementById('chat-title').innerText = contact.name;
+            }
+        }
+        toggleSettings();
+    }
+
+    function clearChat() {
+        if (!currentContactId) return;
+        if (confirm('确定要清空当前对话记录吗？')) {
+            const contact = findContact(currentContactId);
+            contact.history = [];
+            saveContacts();
+            renderChatWindow([]);
+        }
+    }
+
+    // --- 响应式和移动端视图切换 ---
+
+    const contactListEl = document.getElementById('contact-list');
+    const chatAreaEl = document.getElementById('chat-area');
+    const backBtnEl = document.getElementById('back-to-list-btn');
+
+    function handleOrientationChange() {
+        isMobileView = window.innerWidth <= 600 && window.orientation === 0;
+
+        if (isMobileView) {
+            contactListEl.style.display = 'none';
+            chatAreaEl.style.display = 'flex';
+            backBtnEl.style.display = 'block';
+        } else {
+            contactListEl.style.display = 'flex';
+            chatAreaEl.style.display = 'flex';
+            backBtnEl.style.display = 'none';
+        }
+    }
+    
+    function showContactList() {
+        if (isMobileView) {
+            contactListEl.style.display = 'flex';
+            chatAreaEl.style.display = 'none';
+        }
+    }
+
+    // --- 聊天功能 ---
+
+    function renderChatWindow(history) {
+        const chatWindow = document.getElementById('chat-window');
+        chatWindow.innerHTML = '';
+        history.forEach(msg => {
+            if (msg.role !== 'system') {
+                appendMessage(msg.role, msg.content, false);
+            }
+        });
+        scrollToBottom();
+    }
+
+    async function sendMessage() {
+        if (isTyping || !currentContactId) return;
+
+        const input = document.getElementById('user-input');
+        const text = input.value.trim();
+        if (!text) return;
+
+        const contact = findContact(currentContactId);
+        if (!contact.apiKey || !contact.model) {
+            alert(`请为 ${contact.name} 配置 API Key 和模型名！`);
+            showSettings(contact.id);
+            return;
+        }
+        
+        // 渲染用户消息
+        appendMessage('user', text);
+        input.value = '';
+        
+        // 渲染 AI 占位消息并启动流式输出
+        const aiMsgDiv = appendMessage('ai', '');
+        const contentDiv = aiMsgDiv.querySelector('.content');
+        const cursor = document.createElement('span');
+        cursor.className = 'typing-cursor';
+        contentDiv.appendChild(cursor);
+
+        isTyping = true;
+        checkSendButton();
+
+        try {
+            // 构造请求消息
+            let requestMessages = [{ role: "system", content: contact.systemPrompt }];
+            requestMessages = requestMessages.concat(contact.history);
+            requestMessages.push({ role: "user", content: text });
+
+            // ** 关键：使用 Fetch API 发送流式请求 **
+            const response = await fetch(API_URL, {
+                method: 'POST',
+                headers: {
+                    'Authorization': `Bearer ${contact.apiKey}`,
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify({
+                    model: contact.model,
+                    messages: requestMessages,
+                    stream: true // 开启流式输出
+                })
+            });
+
+            if (!response.ok) {
+                // 读取非流式错误信息
+                const errorData = await response.json();
+                throw new Error(errorData.message || `API Error: ${response.status}`);
+            }
+
+            const reader = response.body.getReader();
+            const decoder = new TextDecoder("utf-8");
+            let fullResponseText = '';
+            let isDone = false;
+
+            while (!isDone) {
+                const { value, done } = await reader.read();
+                isDone = done;
+                if (done) break;
+
+                const chunk = decoder.decode(value, { stream: true });
+                const lines = chunk.split('\n');
+
+                for (const line of lines) {
+                    if (line.startsWith('data: ')) {
+                        const dataStr = line.substring(6).trim();
+                        if (dataStr === '[DONE]') {
+                            isDone = true;
+                            break;
+                        }
+
+                        try {
+                            const data = JSON.parse(dataStr);
+                            const delta = data.choices[0].delta.content || '';
+                            
+                            if (delta) {
+                                fullResponseText += delta;
+                                // 更新内容，并保持光标在末尾
+                                contentDiv.innerText = fullResponseText;
+                                contentDiv.appendChild(cursor);
+                                scrollToBottom();
+                            }
+                        } catch (e) {
+                            console.error("JSON parse error or invalid stream data:", e, dataStr);
+                        }
+                    }
+                }
+            }
+            
+            // 移除光标
+            cursor.remove();
+
+            // 更新历史记录
+            contact.history.push({ role: "user", content: text });
+            contact.history.push({ role: "assistant", content: fullResponseText });
+            saveContacts();
+
+        } catch (e) {
+            if (cursor.parentNode) cursor.remove();
+            contentDiv.innerHTML = `⚠️ <span style="color: #ff4d4f;">错误: ${e.message}</span>`;
+            console.error("Chat Error:", e);
+        } finally {
+            isTyping = false;
+            checkSendButton();
+            // 保证输入框可以滚动到底部
+            const inputEl = document.getElementById('user-input');
+            inputEl.style.height = '40px'; // 重置高度
+        }
+    }
+
+    function appendMessage(role, text, withAnimation = true) {
+        const win = document.getElementById('chat-window');
+        const div = document.createElement('div');
+        div.className = `message ${role}`; // fade-in 效果已在 CSS 中默认设置
+        
+        const contact = findContact(currentContactId);
+        let avatarUrl;
+
+        if (role === 'user') {
+            avatarUrl = 'https://api.dicebear.com/7.x/avataaars/svg?seed=User';
+        } else {
+            avatarUrl = contact.avatar || getRandomAvatar(); 
+        }
+
+        div.innerHTML = `
+            <img class="msg-avatar" src="${avatarUrl}">
+            <div class="content">${text}</div>
+        `;
+        
+        win.appendChild(div);
+        scrollToBottom();
+        return div;
+    }
+
+    function scrollToBottom() {
+        const win = document.getElementById('chat-window');
+        win.scrollTo({ top: win.scrollHeight, behavior: 'smooth' });
+    }
+</script>
+</body>
+</html>
